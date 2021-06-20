@@ -68,69 +68,75 @@ class Net(BayesianNet):
                 logstd=self.y_logstd,
                 reparameterize=True,
                 reduce_mean_dims=[0, 1],
-                multiplier=456)  ## traing data size
+                multiplier=456)  # training data size
         return self
 
 
-data_path = os.path.join('data', 'housing.data')
-x_train, y_train, x_valid, y_valid, x_test, y_test = load_uci_boston_housing(data_path)
-x_train = np.vstack([x_train, x_valid])
-y_train = np.hstack([y_train, y_valid])
-n_train, x_dim = x_train.shape
+def main():
+    data_path = os.path.join('data', 'housing.data')
+    x_train, y_train, x_valid, y_valid, x_test, y_test = load_uci_boston_housing(data_path)
+    x_train = np.vstack([x_train, x_valid])
+    y_train = np.hstack([y_train, y_valid])
+    n_train, x_dim = x_train.shape
 
-x_train, x_test, _, _ = standardize(x_train, x_test)
-y_train, y_test, mean_y_train, std_y_train = standardize(y_train, y_test)
+    x_train, x_test, _, _ = standardize(x_train, x_test)
+    y_train, y_test, mean_y_train, std_y_train = standardize(y_train, y_test)
 
-print('data size:', len(x_train))
+    print('data size:', len(x_train))
 
-lb_samples = 20
-epoch_size = 5000
-batch_size = 114
+    lb_samples = 20
+    epoch_size = 5000
+    batch_size = 114
 
-n_hiddens = [50]
+    n_hiddens = [50]
 
-layer_sizes = [x_dim] + n_hiddens + [1]
-print('layer size: ', layer_sizes)
+    layer_sizes = [x_dim] + n_hiddens + [1]
+    print('layer size: ', layer_sizes)
 
-net = Net(layer_sizes, lb_samples)
-print('parameters length: ', len(net.parameters()))
+    net = Net(layer_sizes, lb_samples)
+    print('parameters length: ', len(net.parameters()))
 
-lr = 1e-3
-model = SGLD(lr)
+    lr = 1e-3
+    model = SGLD(lr)
 
-len_ = len(x_train)
-num_batches = math.floor(len_ / batch_size)
+    len_ = len(x_train)
+    num_batches = math.floor(len_ / batch_size)
 
-test_freq = 20
+    test_freq = 20
 
-for epoch in range(epoch_size):
-    perm = np.random.permutation(x_train.shape[0])
-    x_train = x_train[perm, :]
-    y_train = y_train[perm]
+    for epoch in range(epoch_size):
+        perm = np.random.permutation(x_train.shape[0])
+        x_train = x_train[perm, :]
+        y_train = y_train[perm]
 
-    for step in range(num_batches):
-        x = jt.array(x_train[step * batch_size:(step + 1) * batch_size])
-        y = jt.array(y_train[step * batch_size:(step + 1) * batch_size])
+        for step in range(num_batches):
+            x = jt.array(x_train[step * batch_size:(step + 1) * batch_size])
+            y = jt.array(y_train[step * batch_size:(step + 1) * batch_size])
 
-        re_sample = True if epoch == 0 and step == 0 else False
-        w_samples = model.sample(net, {'x': x, 'y': y}, re_sample)
+            re_sample = True if epoch == 0 and step == 0 else False
+            w_samples = model.sample(net, {'x': x, 'y': y}, re_sample)
 
-        for i, (k, w) in enumerate(w_samples.items()):
-            assert (w.shape[0] == lb_samples)
-            esti_logstd = 0.5 * jt.log(jt.mean(w * w, [0]))
-            net.w_logstds[i] = net.w_logstds[i].update(esti_logstd)
+            for i, (k, w) in enumerate(w_samples.items()):
+                assert (w.shape[0] == lb_samples)
+                esti_logstd = 0.5 * jt.log(jt.mean(w * w, [0]))
+                net.w_logstds[i] = net.w_logstds[i].update(esti_logstd)
 
-        if (step + 1) % num_batches == 0:
-            net.execute({**w_samples, 'x': x, 'y': y})
+            if (step + 1) % num_batches == 0:
+                net.execute({**w_samples, 'x': x, 'y': y})
+                rmse = net.cache['rmse'].numpy()
+                print("Epoch[{}/{}], Step [{}/{}], RMSE: {:.4f}".format(epoch + 1, epoch_size, step + 1, num_batches,
+                                                                        float(rmse) * std_y_train))
+
+        # eval
+        if epoch % test_freq == 0:
+            x_t = jt.array(x_test)
+            y_t = jt.array(y_test)
+            net.execute({**w_samples, 'x': x_t, 'y': y_t})
             rmse = net.cache['rmse'].numpy()
-            print("Epoch[{}/{}], Step [{}/{}], RMSE: {:.4f}".format(epoch + 1, epoch_size, step + 1, num_batches,
-                                                                    float(rmse) * std_y_train))
+            print('>> TEST')
+            print('>> Test RMSE: {:.4f}'.format(float(rmse) * std_y_train))
 
-    # eval
-    if epoch % test_freq == 0:
-        x_t = jt.array(x_test)
-        y_t = jt.array(y_test)
-        net.execute({**w_samples, 'x': x_t, 'y': y_t})
-        rmse = net.cache['rmse'].numpy()
-        print('>> TEST')
-        print('>> Test RMSE: {:.4f}'.format(float(rmse) * std_y_train))
+
+if __name__ == '__main__':
+    main()
+

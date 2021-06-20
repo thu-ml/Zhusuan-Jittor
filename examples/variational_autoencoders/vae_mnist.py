@@ -85,51 +85,56 @@ class Variational(BayesianNet):
         return self
 
 
-epoch_size = 10
-batch_size = 64
+def main():
+    epoch_size = 10
+    batch_size = 64
 
-z_dim = 40
-x_dim = 28 * 28 * 1
+    z_dim = 40
+    x_dim = 28 * 28 * 1
 
-lr = 0.001
+    lr = 0.001
 
-generator = Generator(x_dim, z_dim, batch_size)
-variational = Variational(x_dim, z_dim, batch_size)
-model = ELBO(generator, variational)
+    generator = Generator(x_dim, z_dim, batch_size)
+    variational = Variational(x_dim, z_dim, batch_size)
+    model = ELBO(generator, variational)
 
-optimizer = jt.optim.Adam(model.parameters(), lr)
+    optimizer = jt.optim.Adam(model.parameters(), lr)
 
-x_train, t_train, x_valid, t_valid, x_test, t_test = load_mnist_realval()
+    x_train, t_train, x_valid, t_valid, x_test, t_test = load_mnist_realval()
 
-len_ = x_train.shape[0]
-num_batches = math.ceil(len_ / batch_size)
+    len_ = x_train.shape[0]
+    num_batches = math.ceil(len_ / batch_size)
 
-for epoch in range(epoch_size):
-    for step in range(num_batches):
-        x = jt.array(x_train[step * batch_size:min((step + 1) * batch_size, len_)])
-        x = jt.reshape(x, [-1, x_dim])
-        if x.shape[0] != batch_size:
-            break
-        loss = model({'x': x})
-        optimizer.step(loss)
-        if (step + 1) % 100 == 0:
-            print("Epoch[{}/{}], Step [{}/{}], Loss: {:.4f}".format(epoch + 1, epoch_size, step + 1, num_batches,
-                                                                    float(loss.numpy())))
+    for epoch in range(epoch_size):
+        for step in range(num_batches):
+            x = jt.array(x_train[step * batch_size:min((step + 1) * batch_size, len_)])
+            x = jt.reshape(x, [-1, x_dim])
+            if x.shape[0] != batch_size:
+                break
+            loss = model({'x': x})
+            optimizer.step(loss)
+            if (step + 1) % 100 == 0:
+                print("Epoch[{}/{}], Step [{}/{}], Loss: {:.4f}".format(epoch + 1, epoch_size, step + 1, num_batches,
+                                                                        float(loss.numpy())))
 
-batch_x = x_test[0:64]
-batch_x = jt.array(batch_x)
-nodes_q = variational({'x': batch_x}).nodes
-z = nodes_q['z'].tensor
-cache = generator({'z': z}).cache
-sample = cache['x_mean'].numpy()
+    batch_x = x_test[0:64]
+    batch_x = jt.array(batch_x)
+    nodes_q = variational({'x': batch_x}).nodes
+    z = nodes_q['z'].tensor
+    cache = generator({'z': z}).cache
+    sample = cache['x_mean'].numpy()
 
-cache = generator({}).cache
-sample_gen = cache['x_mean'].numpy()
+    cache = generator({}).cache
+    sample_gen = cache['x_mean'].numpy()
 
-result_fold = './result'
-if not os.path.exists(result_fold):
-    os.mkdir(result_fold)
+    result_fold = './result'
+    if not os.path.exists(result_fold):
+        os.mkdir(result_fold)
 
-save_img(batch_x, os.path.join(result_fold, 'origin_x_.png'))
-save_img(sample, os.path.join(result_fold, 'reconstruct_x_.png'))
-save_img(sample_gen, os.path.join(result_fold, 'sample_x_.png'))
+    save_img(batch_x, os.path.join(result_fold, 'origin_x_.png'))
+    save_img(sample, os.path.join(result_fold, 'reconstruct_x_.png'))
+    save_img(sample_gen, os.path.join(result_fold, 'sample_x_.png'))
+
+
+if __name__ == '__main__':
+    main()
