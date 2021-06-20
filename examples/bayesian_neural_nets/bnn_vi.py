@@ -145,12 +145,11 @@ def main():
 
             if (step + 1) % num_batches == 0:
                 rmse = net.cache['rmse'].numpy()
-                print(
-                    "Epoch[{}/{}], Step [{}/{}], Lower bound: {:.4f}, RMSE: {:.4f}".format(epoch + 1, epoch_size,
-                                                                                           step + 1,
-                                                                                           num_batches,
-                                                                                           float(lbs.numpy()),
-                                                                                           float(rmse) * std_y_train))
+                print("Epoch[{}/{}], Step [{}/{}], Lower bound: {:.4f}, RMSE: {:.4f}".format(epoch + 1, epoch_size,
+                                                                                             step + 1,
+                                                                                             num_batches,
+                                                                                             float(lbs.numpy()),
+                                                                                             float(rmse) * std_y_train))
 
         # eval
         if epoch % test_freq == 0:
