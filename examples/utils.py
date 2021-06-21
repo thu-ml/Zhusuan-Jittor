@@ -1,7 +1,6 @@
 import os
 import math
 import gzip
-import progressbar
 import six
 import numpy as np
 from six.moves import urllib, range
@@ -29,46 +28,6 @@ def standardize(data_train, data_test):
     data_test_standardized = (data_test - mean) / std
     mean, std = np.squeeze(mean, 0), np.squeeze(std, 0)
     return data_train_standardized, data_test_standardized, mean, std
-
-
-def show_progress(block_num, block_size, total_size):
-    global pbar
-    if pbar is None:
-        if total_size > 0:
-            prefixes = ('', 'Ki', 'Mi', 'Gi', 'Ti', 'Pi', 'Ei', 'Zi', 'Yi')
-            power = min(int(math.log(total_size, 2) / 10), len(prefixes) - 1)
-            scaled = float(total_size) / (2 ** (10 * power))
-            total_size_str = '{:.1f} {}B'.format(scaled, prefixes[power])
-            try:
-                marker = '█'
-            except UnicodeEncodeError:
-                marker = '*'
-            widgets = [
-                progressbar.Percentage(),
-                ' ', progressbar.DataSize(),
-                ' / ', total_size_str,
-                ' ', progressbar.Bar(marker=marker),
-                ' ', progressbar.ETA(),
-                ' ', progressbar.AdaptiveTransferSpeed(),
-            ]
-            pbar = progressbar.ProgressBar(widgets=widgets,
-                                           max_value=total_size)
-        else:
-            widgets = [
-                progressbar.DataSize(),
-                ' ', progressbar.Bar(marker=progressbar.RotatingMarker()),
-                ' ', progressbar.Timer(),
-                ' ', progressbar.AdaptiveTransferSpeed(),
-            ]
-            pbar = progressbar.ProgressBar(widgets=widgets,
-                                           max_value=progressbar.UnknownLength)
-
-    downloaded = block_num * block_size
-    if downloaded < total_size:
-        pbar.update(downloaded)
-    else:
-        pbar.finish()
-        pbar = None
 
 def download_dataset(url, path):
     print('Downloading data from %s' % url)

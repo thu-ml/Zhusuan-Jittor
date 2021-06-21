@@ -1,4 +1,5 @@
 import jittor as jt
+jt.flags.use_cuda = 1
 from jittor import nn, Module
 
 import os
