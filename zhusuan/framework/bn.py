@@ -3,6 +3,7 @@ from jittor import Module
 
 from zhusuan.framework.stochastic_tensor import StochasticTensor
 from zhusuan.distributions import *
+from zhusuan.flows import *
 
 
 class BayesianNet(Module):

@@ -47,7 +47,11 @@ def to_one_hot(x, depth):
     ret[np.arange(x.shape[0]), x] = 1
     return ret
 
-def load_mnist_realval(path=data_path, one_hot=True, dequantify=False):
+def logit(x, alpha):
+    x_ = alpha + (1 - 2 * alpha) * x
+    return np.log(x_ / (1 - x_))
+
+def load_mnist_realval(path=data_path, one_hot=True, dequantify=False, logit_transform=False):
     """
     Loads the real valued MNIST dataset.
 
@@ -58,6 +62,7 @@ def load_mnist_realval(path=data_path, one_hot=True, dequantify=False):
 
     :return: The MNIST dataset.
     """
+    alpha = 1.0e-6
     if not os.path.isfile(path):
         data_dir = os.path.dirname(path)
         if not os.path.exists(os.path.dirname(path)):
@@ -84,6 +89,11 @@ def load_mnist_realval(path=data_path, one_hot=True, dequantify=False):
                                      size=x_valid.shape).astype('float32')
         x_test += np.random.uniform(0, 1. / 256,
                                     size=x_test.shape).astype('float32')
+    if logit_transform:
+        x_train = logit(x_train, alpha)
+        x_valid = logit(x_valid, alpha)
+        x_test = logit(x_test, alpha)
+
     n_y = t_train.max() + 1
     t_transform = (lambda x: to_one_hot(x, n_y)) if one_hot else (lambda x: x)
     return x_train, t_transform(t_train), x_valid, t_transform(t_valid), \
@@ -115,6 +125,27 @@ def save_img(data, name):
         im = Image.fromarray(img_data, 'L')
         imgs.paste(im, (int(j) * size , (i % 8) * size))
     imgs.save(name)
+
+def save_image(var, filename, nrow=8, padding=2, pad_value=0):
+    nmaps = var.shape[0]
+    xmaps = min(nrow, nmaps)
+    ymaps = math.ceil(float(nmaps) / xmaps)
+    height, width = int(var.shape[2] + padding), int(var.shape[3] + padding)
+    num_channels = var.shape[1]
+    grid = Image.new('L', (width * xmaps, height * ymaps))
+    k = 0
+    var = (var * 255 + 0.5).safe_clip(0, 255).transpose([0, 2, 3, 1])
+    for y in range(ymaps):
+        for x in range(xmaps):
+            if k >= nmaps:
+                break
+            data = var[k].numpy()
+            data = np.resize(data, (var.shape[1], var.shape[2]))
+            data = data.astype(np.uint8)
+            im = Image.fromarray(data, 'L')
+            grid.paste(im, (width * x, height * y))
+            k = k + 1
+    grid.save(filename)
 
 
 def load_uci_boston_housing(path, dtype=np.float32):

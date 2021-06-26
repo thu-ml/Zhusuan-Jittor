@@ -18,8 +18,8 @@ class Logistic(Distribution):
                                        is_reparameterized,
                                        group_ndims=group_ndims,
                                        **kwargs)
-        self._loc = kwargs['loc']
-        self._scale = kwargs['scale']
+        self._loc = jt.cast(kwargs['loc'], self._dtype) if type(kwargs['loc']) in [int, float] else kwargs['loc']
+        self._scale = jt.cast(kwargs['scale'], self._dtype) if type(kwargs['scale']) in [int, float] else kwargs['scale']
     
     def _batch_shape(self):
         return self._loc.shape
@@ -29,8 +29,8 @@ class Logistic(Distribution):
             _shape = self._loc.shape
             _shape = [n_samples] + _shape
             _len = len(self._loc.shape)
-            _loc = jt.cast(jt.repeat(self._loc, [n_samples, * _len * [1]]), self._dtype)
-            _scale = jt.cast(jt.repeat(self._scale, [n_samples * _len *[1]]), self._dtype)
+            _loc = jt.cast(jt.repeat(self._loc, [n_samples, *_len * [1]]), self._dtype)
+            _scale = jt.cast(jt.repeat(self._scale, [n_samples, *_len * [1]]), self._dtype)
         else:
             _shape = self._loc.shape
             _loc = jt.cast(self._loc, self._dtype)
@@ -38,7 +38,7 @@ class Logistic(Distribution):
         
         if not self.is_reparameterized:
             _loc.stop_grad()
-            _std.stop_grad()
+            _scale.stop_grad()
         
         uniform = jt.init.uniform(_shape, self._dtype, 0., 1.)
         epsilon = jt.log(uniform) - jt.log(1 - uniform)
@@ -52,8 +52,8 @@ class Logistic(Distribution):
         if len(sample.shape) > len(self._loc.shape):
             n_samples = sample.shape[0]
             _len = len(self._loc.shape)
-            _loc = jt.repeat(self._loc, [n_samples * _len * [1]])
-            _scale = jt.repeat(self._std, [n_samples * _len * [1]])
+            _loc = jt.repeat(self._loc, [n_samples, *_len * [1]])
+            _scale = jt.repeat(self._scale, [n_samples, *_len * [1]])
         else:
             _loc = self._loc
             _scale = self._scale

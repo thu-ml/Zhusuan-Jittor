@@ -11,7 +11,7 @@ sys.path.append('..')
 from zhusuan.framework.bn import BayesianNet
 from zhusuan.variational.elbo import ELBO
 
-from utils import load_mnist_realval, save_img
+from examples.utils import load_mnist_realval, save_img
 
 
 class Generator(BayesianNet):

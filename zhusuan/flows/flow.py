@@ -21,7 +21,7 @@ class Flow(Distribution):
         else:
             z = self._latents.sample(n_samples)
             x_hat = self._transform.execute(z, inverse=True, **kwargs)
-            return x_hat
+            return x_hat[0]
 
     def _log_prob(self, *given, **kwargs):
         z, log_detJ = self._transform.execute(*given, inverse=False, **kwargs)
