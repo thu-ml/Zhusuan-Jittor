@@ -5,6 +5,31 @@ from zhusuan.distributions.base import Distribution
 
 
 class Normal(Distribution):
+    """
+    The class of univariate Normal distribution.
+    See :class:`~zhusuan.distributions.base.Distribution` for details.
+
+    :param mean: A `float` Var. The mean of the Normal distribution.
+        Should be broadcastable to match `std` or `logstd`.
+    :param std: A `float` Var. The standard deviation of the Normal
+        distribution. Should be positive and broadcastable to match `mean`.
+    :param logstd: A `float` Var. The log standard deviation of the Normal
+        distribution. Should be broadcastable to match `mean`.
+    :param group_ndims: A 0-D `int32` Var representing the number of
+        dimensions in `batch_shape` (counted from the end) that are grouped
+        into a single event, so that their probabilities are calculated
+        together. Default is 0, which means a single value is an event.
+        See :class:`~zhusuan.distributions.base.Distribution` for more detailed
+        explanation.
+    :param is_reparameterized: A Bool. If True, gradients on samples from this
+        distribution are allowed to propagate into inputs, using the
+        reparametrization trick from (Kingma, 2013).
+    :param use_path_derivative: A bool. Whether when taking the gradients
+        of the log-probability to propagate them through the parameters
+        of the distribution (False meaning you do propagate them). This
+        is based on the paper "Sticking the Landing: Simple,
+        Lower-Variance Gradient Estimators for Variational Inference"
+    """
     def __init__(self,
                  dtype='float32',
                  param_dtype='float32',

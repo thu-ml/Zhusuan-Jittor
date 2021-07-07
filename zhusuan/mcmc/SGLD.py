@@ -6,6 +6,15 @@ from zhusuan.mcmc.SGMCMC import SGMCMC
 
 
 class SGLD(SGMCMC):
+    """
+    Subclass of SGMCMC which implements Stochastic Gradient Langevin Dynamics
+    (Welling & Teh, 2011) (SGLD) update. The updating equation implemented
+    below follows Equation (3) in the paper.
+    
+    * **var_list** - The updated values of latent variables.
+    
+    :param learning_rate: A 0-D `float32` Var.
+    """
     def __init__(self, learning_rate):
         super().__init__()
         self.lr = jt.array(learning_rate)

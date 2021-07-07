@@ -5,6 +5,14 @@ import numpy as np
 from zhusuan.distributions import Distribution
 
 class Logistic(Distribution):
+    """
+    The class of univariate Logistic distribution
+    See :class:`~zhusuan.distributions.base.Distribution` for details.
+
+    :param loc: A 'float' Var. The location term acting on standard Logistic distribution.
+    :param scale: A 'float' Var. The scale term acting on standard Logistic distribution.
+    :param is_reparameterized: A Bool. If True, gradients on samples from this distribution are allowed to propagate into inputs, using the reparametrization trick from (Kingma, 2013).
+    """
     def __init__(self,
                 dtype='float32',
                 param_dtype='float32',

@@ -8,6 +8,11 @@ zhusuan.evaluation
     :inherited-members:
     :inherited-members:
     :inherited-members:
+    :inherited-members:
+    :inherited-members:
+    :inherited-members:
+    :inherited-members:
+    :inherited-members:
 
 Submodules
 ----------

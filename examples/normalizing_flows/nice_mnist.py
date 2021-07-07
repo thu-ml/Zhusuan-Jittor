@@ -36,7 +36,7 @@ class NICE(BayesianNet):
                 scale=scale)
         self.sn('Flow',
                 name='x',
-                latents=self.nodes['z'].dist,
+                latent=self.nodes['z'].dist,
                 transform=self.flow,
                 n_samples=-1) # Not sample when initializing
     

@@ -4,11 +4,22 @@ from jittor import nn
 from zhusuan.transforms.base import Transform
 
 class Sequential(Transform):
+    """
+    A container which stacks transforms together and do forward or inverse transform sequentially.
+
+    :param modules: A list of :class:`~zhusuan.transforms.base.Transform`.
+    """
     def __init__(self, modules):
         super().__init__()
         self.modules = nn.Sequential(modules)
     
     def _forward(self, *x, **kwargs):
+        """
+        :param *x: Arbitrarily number of variables which to be transformed.
+        :param **kwargs: Auxiliary parameters.
+        :return: A tuple, the first term is the transformed Var and the second term is the sum of the log_abs determinant term of each transform's 
+                 Jacobian matrix.
+        """
         log_detJ = []
         for i in range(len(self.modules)):
             x = self.modules[i](*x, inverse=False, **kwargs)
@@ -24,6 +35,11 @@ class Sequential(Transform):
         return x, sum(log_detJ) if log_detJ else jt.zeros([1])
     
     def _inverse(self, *z, **kwargs):
+        """
+        :param *x: Arbitrarily number of variables which to be transformed.
+        :param **kwargs: Auxiliary parameters.
+        :return: The transformed Var.
+        """
         # No log_det(jacobian) in inverse process
         for i in reversed(range(len(self.modules))):
             z = self.modules[i](*z, inverse=True, **kwargs)
