@@ -11,15 +11,15 @@ The :class:`~zhusuan.distributions.base.Distribution` class is the base class
 for various probabilistic distributions which support batch inputs, generating
 batches of samples and evaluate probabilities at batches of given values.
 
-The list of all available distributions can be found on these pages:
+.. The list of all available distributions can be found on these pages:
 
-* :mod:`univariate distributions <zhusuan.distributions.univariate>`
-* :mod:`multivariate distributions <zhusuan.distributions.multivariate>`
+.. * :mod:`univariate distributions <zhusuan.distributions.univariate>`
+.. * :mod:`multivariate distributions <zhusuan.distributions.multivariate>`
 
 We can create a univariate Normal distribution in ZhuSuan by::
 
     >>> import zhusuan as zs
-    >>> a = zs.distributions.Normal(mean=0., logstd=0.)
+    >>> dist_a = zs.distributions.Normal(mean=0., logstd=0.)
 
 The typical input shape for a :class:`~zhusuan.distributions.base.Distribution`
 is like ``batch_shape + input_shape``, where ``input_shape`` represents the
@@ -38,48 +38,38 @@ non-batch value shape of the distribution.
 For a univariate distribution, its ``value_shape`` is [].
 
 An example of univariate distributions
-(:class:`~zhusuan.distributions.univariate.Normal`)::
+(:class:`~zhusuan.distributions.normal.Normal`)::
 
-    >>> import tensorflow as tf
-    >>> _ = tf.InteractiveSession()
+    >>> import jittor as jt
 
-    >>> b = zs.distributions.Normal([[-1., 1.], [0., -2.]], [0., 1.])
+    >>> dist_b = zs.distributions.Normal(mean=jt.array([[-1., 1.], [0., -2.]]), std=jt.array([0., 1.]))
 
-    >>> b.batch_shape.eval()
-    array([2, 2], dtype=int32)
+    >>> dist_b.sample().shape
+    [2,2,]
 
-    >>> b.value_shape.eval()
-    array([], dtype=int32)
+    >>> dist_b.sample(10).shape
+    [10,2,2,]
 
-    >>> tf.shape(b.sample()).eval()
-    array([2, 2], dtype=int32)
+.. and an example of multivariate distributions
+.. (:class:`~zhusuan.distributions.multivariate.OnehotCategorical`)::
 
-    >>> tf.shape(b.sample(1)).eval()
-    array([1, 2, 2], dtype=int32)
+..     >>> c = zs.distributions.OnehotCategorical([[0., 1., -1.],
+..     ...                                         [2., 3., 4.]])
 
-    >>> tf.shape(b.sample(10)).eval()
-    array([10,  2,  2], dtype=int32)
+..     >>> c.batch_shape.eval()
+..     array([2], dtype=int32)
 
-and an example of multivariate distributions
-(:class:`~zhusuan.distributions.multivariate.OnehotCategorical`)::
+..     >>> c.value_shape.eval()
+..     array([3], dtype=int32)
 
-    >>> c = zs.distributions.OnehotCategorical([[0., 1., -1.],
-    ...                                         [2., 3., 4.]])
+..     >>> tf.shape(c.sample()).eval()
+..     array([2, 3], dtype=int32)
 
-    >>> c.batch_shape.eval()
-    array([2], dtype=int32)
+..     >>> tf.shape(c.sample(1)).eval()
+..     array([1, 2, 3], dtype=int32)
 
-    >>> c.value_shape.eval()
-    array([3], dtype=int32)
-
-    >>> tf.shape(c.sample()).eval()
-    array([2, 3], dtype=int32)
-
-    >>> tf.shape(c.sample(1)).eval()
-    array([1, 2, 3], dtype=int32)
-
-    >>> tf.shape(c.sample(10)).eval()
-    array([10,  2,  3], dtype=int32)
+..     >>> tf.shape(c.sample(10)).eval()
+..     array([10,  2,  3], dtype=int32)
 
 There are cases where a batch of random variables are grouped into a
 single event so that their probabilities can be computed together.
@@ -98,17 +88,17 @@ broadcastable to shape ``(... + )batch_shape + value_shape``.
 The returned Tensor has shape ``(... + )batch_shape[:-group_ndims]``.
 For example::
 
-    >>> d = zs.distributions.Normal([[-1., 1.], [0., -2.]], 0.,
-    ...                             group_ndims=1)
+    >>> dist_c = zs.distributions.Normal(mean=jt.array([[-1., 1.], [0., -2.]]), std=1.,
+    ...                                  group_ndims=1)
 
-    >>> d.log_prob(0.).eval()
-    array([-2.83787704, -3.83787727], dtype=float32)
+    >>> dist_c.log_prob(jt.zeros[1])
+    jt.Var([-2.837877  -3.8378773], dtype=float32)
 
-    >>> e = zs.distributions.Normal(tf.zeros([2, 1, 3]), 0.,
-    ...                             group_ndims=2)
+    >>> dist_d = zs.distributions.Normal(mean=jt.zeros([2, 1, 3]), std=1.,
+    ...                                  group_ndims=2)
 
-    >>> tf.shape(e.log_prob(tf.zeros([5, 1, 1, 3]))).eval()
-    array([5, 2], dtype=int32)
+    >>> dist_d.log_prob(jt.zeros([5, 1, 1, 3])).shape
+    [5,2,]
 
 .. _bayesian-net:
 
@@ -131,14 +121,18 @@ We apply a Bayesian treatment and assume a Normal prior distribution of the
 regression weights :math:`w`. Suppose the input feature has 5 dimensions. For
 simplicity we define the input as a placeholder and fix the hyper-parameters::
 
-    x = tf.placeholder(tf.float32, shape=[5])
+    x = jt.rand([5])
     alpha = 1.
     beta = 0.1
 
-To define the model, the first step is to construct a
-:class:`~zhusuan.framework.bn.BayesianNet` instance::
+To define the model, the first step is to define a subclass of
+:class:`~zhusuan.framework.bn.BayesianNet`::
 
-    bn = zs.BayesianNet()
+    class Net(BayesianNet):
+        def __init__(self):
+            # Initialize...
+        def execute(self, observed):
+            # Forward propagation...
 
 A Bayesian network describes the dependency structure of the joint
 distribution over a set of random variables as directed graphs.
@@ -148,182 +142,217 @@ keep two kinds of nodes:
 * Stochastic nodes. They are random variables in graphical models.
   The ``w`` node can be constructed as::
 
-    w = bn.normal("w", tf.zeros([x.shape[-1]], std=alpha)
+        w = self.stochastic_node('Normal', name="w", mean=jt.zeros([x.shape[-1]]), std=alpha)
 
-  Here ``w`` is a :class:`~zhusuan.framework.bn.StochasticTensor` that follows
-  the :class:`~zhusuan.distributions.univariate.Normal` distribution::
+  Here ``w`` is a :class:`~zhusuan.framework.stochastic_tensor.StochasticTensor` that follows
+  the :class:`~zhusuan.distributions.normal.Normal` distribution, it will be registered to 
+  the ``nodes`` property of the class.
 
-    >>> print(w)
-    <zhusuan.framework.bn.StochasticTensor object at ...
+    >>> print(self.nodes['w'])
+    <zhusuan.framework.stochastic_tensor.StochasticTensor object at ...
 
-  For any distribution available in :mod:`zhusuan.distributions`, we can find
-  a method of :class:`BayesianNet` for creating the corresponding stochastic
+  For any distribution available in :mod:`zhusuan.distributions`, we can use the name of the distributions and
+  the ``stochastic_node`` method of :class:`BayesianNet` to create the corresponding stochastic
   node.
-  The returned :class:`~zhusuan.framework.bn.StochasticTensor` instances
-  are Tensor-like, which means that you can mix them with almost any Tensorflow
-  primitives, for example, the predicted mean of the linear regression is an
+  The returned variables is an sample of stochastic_node, which means that you can mix them with any Jittor
+  operations, for example, the predicted mean of the linear regression is an
   inner product between ``w`` and the input ``x``::
 
-    y_mean = tf.reduce_sum(w * x, axis=-1)
+    y_mean = jt.sum(w * x, dim=-1)
 
 * Deterministic nodes. As the above code shows, deterministic nodes can be
-  constructed directly with Tensorflow operations, and in this way
+  constructed directly with Jittor operations, and in this way
   :class:`~zhusuan.framework.bn.BayesianNet` does not keep track of them.
-  However, in some cases it's convenient to enable the tracking by the
-  :meth:`~zhusuan.framework.BayesianNet.deterministic` method::
+  However, in some cases it's convenient to enable the tracking by the ``cache`` property::
 
-    y_mean = bn.deterministic("y_mean", tf.reduce_sum(w * x, axis=-1))
+    self.cache['y_mean'] = y_mean
 
-  This allows you to fetch the ``y_mean`` Tensor from ``bn`` whenever you want
+  This allows you to fetch the ``y_mean`` Var whenever you want
   it.
 
 The full code of building a Bayesian linear regression model is like::
 
-    def bayesian_linear_regression(x, alpha, beta):
-        bn = zs.BayesianNet()
-        w = bn.normal("w", mean=0., std=alpha)
-        y_mean = tf.reduce_sum(w * x, axis=-1)
-        bn.normal("y", y_mean, std=beta)
-        return bn
+    class bayesian_linear_regression(BayesianNet):
+        def __init__(self, alpha, beta):
+            self.alpha = alpha
+            self.beta = beta
+        
+        def execute(self, observed):
+            self.observe(observed)
+            w = self.self.stochastic_node('Normal', name="w", mean=jt.zeros([x.shape[-1]]), std=alpha)
+            x = self.observed['x']
+            y_mean = jt.sum(w * x, dim=-1)
+            y = self.self.stochastic_node('Normal', name="y", mean=y_mean, std=beta)
+            return self
 
-A unique feature of graphical models is that stochastic nodes are allowed to
-have undetermined behaviour (i.e., being latent), and we can observe them at
-any time (then they are fixed to the observations).
-In ZhuSuan, the :class:`~zhusuan.framework.bn.BayesianNet` can be initialized
-with a dictionary argument `observed` to assign observations to certain
-stochastic nodes, for example::
+Then we can construct an instance of the model::
 
-    bn = zs.BayesianNet(observed={"w": w_obs})
+    model = bayesian_linear_regression(alpha, beta)
 
-will cause the random variable :math:`w` to be observed as ``w_obs``.
-The result is that in ``bn``, ``y_mean`` is computed from the observed value
-of ``w`` (``w_obs``).
+In ZhuSuan-Jittor, we use a dictionary variable `observed` and the method :meth:`~zhusuan.framework.bn.BayesianNet.observe` 
+to assign observations to certain stochastic nodes or pass training data to model, for example::
+
+    model({'w': w_obs, 'x': x})
+
+will cause the random variable :math:`w` to be observed as ``w_obs``. The result is that ``y_mean`` is computed from the observed value
+of ``w`` (``w_obs``) and the training data ``x`` passed by the dictionary variable.
+
 For stochastic nodes that are not given observations, their samples will be
-used when the corresponding :class:`~zhusuan.framework.bn.StochasticTensor` is
-involved in computation with Tensors or fed into Tensorflow operations.
-In this example it means that if we don't pass any observation to ``bn``, the
-samples of ``w`` will be used to compute ``y_mean``.
+used when the corresponding :class:`~zhusuan.framework.stochastic_tensor.StochasticTensor` is
+involved in computation with Vars or fed into Jittor operations.
+In this example it means that if we don't pass any observation of :math:`w` to the model, the
+samples of ``w`` will be used to compute ``y_mean``. 
 
-Although the above approach allows assigning observations to stochastic
-nodes, in most common cases, it is more convenient to first define the
-graphical model, and then pass observations whenever needed.
-Besides, the model should allow queries with different configurations of
-observations.
-To enable this workflow, we introduce a new class
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet`.
-Conceptually we can view
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instances as the original
-model and :class:`~zhusuan.framework.bn.BayesianNet` as the result of certain
-observations.
-As we shall see, :class:`~zhusuan.framework.bn.BayesianNet` instances can be
-lazily constructed from its meta class instance.
-
-We made it very easy to define the model as a
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet`.
-There is no change to the above code but just adding a decorator to the
-function::
-
-    @zs.meta_bayesian_net(scope="model")
-    def bayesian_linear_regression(x, alpha, beta):
-        bn = zs.BayesianNet()
-        w = bn.normal("w", mean=0., std=alpha)
-        y_mean = tf.reduce_sum(w * x, axis=-1)
-        bn.normal("y", y_mean, std=beta)
-        return bn
-
-The function decorated by :func:`zs.meta_bayesian_net` will return a
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instead of the original
-:class:`~zhusuan.framework.bn.BayesianNet` instance::
-
-    >>> model = bayesian_linear_regression(x, alpha, beta)
-
-    >>> print(model)
-    <zhusuan.framework.meta_bn.MetaBayesianNet object at ...
-
-As we have mentioned, :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` can
-allow different configurations of observations.
-This is achieved by its
-:meth:`~zhusuan.framework.meta_bn.MetaBayesianNet.observe` method.
-We could pass observations as named arguments, and it will return a
-corresponding :class:`~zhusuan.framework.bn.BayesianNet` instance,
-for example::
-
-    bn = model.observe(w=w_obs)
-
-will set ``w`` to be observed in the returned
-:class:`~zhusuan.framework.bn.BayesianNet` instance ``bn``.
-Calling the above function with different named arguments instantiates the
-:class:`~zhusuan.framework.bn.BayesianNet` with different observations,
-which resembles the common behaviour of probabilistic graphical models.
-
-.. Note::
-
-    The observation passed must have the same type and shape as the
-    :class:`~zhusuan.framework.bn.StochasticTensor`.
-
-If there are
-tensorflow `Variables <https://www.tensorflow.org/api_docs/python/tf/Variable>`_
-created in a model construction function, you may want to reuse them for
-:class:`~zhusuan.framework.bn.BayesianNet` instances with different
-observations.
-There is another decorator in ZhuSuan named :func:`reuse_variables` to make
-this convenient.
-You could add it to any function that creates Tensorflow variables::
-
-    @zs.reuse_variables(scope="model")
-    def build_model(...):
-        bn = zs.BayesianNet()
-        ...
-        return bn
-
-or equivalently, switch on the `reuse_variables` option in the
-:func:`zs.meta_bayesian_net` decorator::
-
-    @zs.meta_bayesian_net(scope="model", reuse_variables=True)
-    def build_model(...):
-        bn = zs.BayesianNet()
-        ...
-        return bn
-
-Up to now we know how to construct a model and reuse it for different
-observations.
 After construction, :class:`~zhusuan.framework.bn.BayesianNet` supports queries
 about the current state of the network, such as::
 
     # get named node(s)
-    w = bn["w"]
-    w, y = bn.get(["w", "y"])
+    w = self.nodes['w'].tensor
+    y = self.nodes['y'].tensor
 
-    # get log probabilities of stochastic nodes conditioned on the current
-    # value of other StochasticTensors.
-    log_pw, log_py = bn.cond_log_prob(["w", "y"])
+    # get log joint probability given the current values of all stochastic nodes
+    log_joint_value = self.log_joint()
 
-    # get log joint probability given the current values of all stochastic
-    # nodes
-    log_joint_value = bn.log_joint()
+.. A unique feature of graphical models is that stochastic nodes are allowed to
+.. have undetermined behaviour (i.e., being latent), and we can observe them at
+.. any time (then they are fixed to the observations).
+.. In ZhuSuan, the :class:`~zhusuan.framework.bn.BayesianNet` can be initialized
+.. with a dictionary argument `observed` to assign observations to certain
+.. stochastic nodes, for example::
 
-By default the log joint probability is computed by summing over
-conditional log probabilities at all stochastic nodes.
-This requires that the distribution batch shapes of all stochastic nodes
-are correctly aligned.
-If not, the returned value can be arbitrary.
-Most of the time you can adjust the `group_ndims` parameter of the stochastic
-nodes to fix this.
-If that's not the case, we still allow customizing the log joint
-probability function by rewriting it in the
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instance like::
+..     bn = zs.BayesianNet(observed={"w": w_obs})
 
-    meta_bn = build_linear_regression(x, alpha, beta)
+.. will cause the random variable :math:`w` to be observed as ``w_obs``.
+.. The result is that in ``bn``, ``y_mean`` is computed from the observed value
+.. of ``w`` (``w_obs``).
+.. For stochastic nodes that are not given observations, their samples will be
+.. used when the corresponding :class:`~zhusuan.framework.bn.StochasticTensor` is
+.. involved in computation with Tensors or fed into Tensorflow operations.
+.. In this example it means that if we don't pass any observation to ``bn``, the
+.. samples of ``w`` will be used to compute ``y_mean``.
 
-    def customized_log_joint(bn):
-        return tf.reduce_sum(
-            bn.cond_log_prob("w"), axis=-1) + bn.cond_log_prob("y")
+.. Although the above approach allows assigning observations to stochastic
+.. nodes, in most common cases, it is more convenient to first define the
+.. graphical model, and then pass observations whenever needed.
+.. Besides, the model should allow queries with different configurations of
+.. observations.
+.. To enable this workflow, we introduce a new class
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet`.
+.. Conceptually we can view
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instances as the original
+.. model and :class:`~zhusuan.framework.bn.BayesianNet` as the result of certain
+.. observations.
+.. As we shall see, :class:`~zhusuan.framework.bn.BayesianNet` instances can be
+.. lazily constructed from its meta class instance.
 
-    meta_bn.log_joint = customized_log_joint
+.. We made it very easy to define the model as a
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet`.
+.. There is no change to the above code but just adding a decorator to the
+.. function::
 
-then all :class:`~zhusuan.framework.bn.BayesianNet` instances constructed
-from this ``meta_bn`` will use the provided customized function to compute
-the result of ``bn.log_joint()``.
+..     @zs.meta_bayesian_net(scope="model")
+..     def bayesian_linear_regression(x, alpha, beta):
+..         bn = zs.BayesianNet()
+..         w = bn.normal("w", mean=0., std=alpha)
+..         y_mean = tf.reduce_sum(w * x, axis=-1)
+..         bn.normal("y", y_mean, std=beta)
+..         return bn
+
+
+
+.. The function decorated by :func:`zs.meta_bayesian_net` will return a
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instead of the original
+.. :class:`~zhusuan.framework.bn.BayesianNet` instance::
+
+..     >>> model = bayesian_linear_regression(x, alpha, beta)
+
+..     >>> print(model)
+..     <zhusuan.framework.meta_bn.MetaBayesianNet object at ...
+
+.. As we have mentioned, :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` can
+.. allow different configurations of observations.
+.. This is achieved by its
+.. :meth:`~zhusuan.framework.meta_bn.MetaBayesianNet.observe` method.
+.. We could pass observations as named arguments, and it will return a
+.. corresponding :class:`~zhusuan.framework.bn.BayesianNet` instance,
+.. for example::
+
+..     bn = model.observe(w=w_obs)
+
+.. will set ``w`` to be observed in the returned
+.. :class:`~zhusuan.framework.bn.BayesianNet` instance ``bn``.
+.. Calling the above function with different named arguments instantiates the
+.. :class:`~zhusuan.framework.bn.BayesianNet` with different observations,
+.. which resembles the common behaviour of probabilistic graphical models.
+
+.. .. Note::
+
+..     The observation passed must have the same type and shape as the
+..     :class:`~zhusuan.framework.bn.StochasticTensor`.
+
+.. If there are
+.. tensorflow `Variables <https://www.tensorflow.org/api_docs/python/tf/Variable>`_
+.. created in a model construction function, you may want to reuse them for
+.. :class:`~zhusuan.framework.bn.BayesianNet` instances with different
+.. observations.
+.. There is another decorator in ZhuSuan named :func:`reuse_variables` to make
+.. this convenient.
+.. You could add it to any function that creates Tensorflow variables::
+
+..     @zs.reuse_variables(scope="model")
+..     def build_model(...):
+..         bn = zs.BayesianNet()
+..         ...
+..         return bn
+
+.. or equivalently, switch on the `reuse_variables` option in the
+.. :func:`zs.meta_bayesian_net` decorator::
+
+..     @zs.meta_bayesian_net(scope="model", reuse_variables=True)
+..     def build_model(...):
+..         bn = zs.BayesianNet()
+..         ...
+..         return bn
+
+.. Up to now we know how to construct a model and reuse it for different
+.. observations.
+.. After construction, :class:`~zhusuan.framework.bn.BayesianNet` supports queries
+.. about the current state of the network, such as::
+
+..     # get named node(s)
+..     w = bn["w"]
+..     w, y = bn.get(["w", "y"])
+
+..     # get log probabilities of stochastic nodes conditioned on the current
+..     # value of other StochasticTensors.
+..     log_pw, log_py = bn.cond_log_prob(["w", "y"])
+
+..     # get log joint probability given the current values of all stochastic
+..     # nodes
+..     log_joint_value = bn.log_joint()
+
+.. By default the log joint probability is computed by summing over
+.. conditional log probabilities at all stochastic nodes.
+.. This requires that the distribution batch shapes of all stochastic nodes
+.. are correctly aligned.
+.. If not, the returned value can be arbitrary.
+.. Most of the time you can adjust the `group_ndims` parameter of the stochastic
+.. nodes to fix this.
+.. If that's not the case, we still allow customizing the log joint
+.. probability function by rewriting it in the
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instance like::
+
+..     meta_bn = build_linear_regression(x, alpha, beta)
+
+..     def customized_log_joint(bn):
+..         return tf.reduce_sum(
+..             bn.cond_log_prob("w"), axis=-1) + bn.cond_log_prob("y")
+
+..     meta_bn.log_joint = customized_log_joint
+
+.. then all :class:`~zhusuan.framework.bn.BayesianNet` instances constructed
+.. from this ``meta_bn`` will use the provided customized function to compute
+.. the result of ``bn.log_joint()``.
 
 
 .. bibliography:: ../refs.bib

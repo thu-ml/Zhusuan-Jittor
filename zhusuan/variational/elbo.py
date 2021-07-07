@@ -34,3 +34,7 @@ class ELBO(Module):
         else:
             elbo = logpxz - logqz
         return -elbo
+
+class EvidenceLowerBoundObjective(ELBO):
+    def __init__(self, generator, variational):
+        super().__init__(generator, variational)

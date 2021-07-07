@@ -1,3 +1,4 @@
-sphinxcontrib-bibtex==1.0.0
+sphinxcontrib-bibtex==2.3.0
+sphinx_rtd_theme==0.4.3
 jittor=1.2.3.55
-Sphinx==3.3.1
+Sphinx==4.0.2

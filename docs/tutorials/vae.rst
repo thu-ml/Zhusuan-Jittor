@@ -5,10 +5,10 @@ Variational Autoencoders
 most widely used deep generative models.
 In this tutorial, we show how to implement VAE in ZhuSuan step by step.
 The full script is at
-`examples/variational_autoencoders/vae.py <https://github.com/thu-ml/zhusuan/blob/master/examples/variational_autoencoders/vae.py>`_.
+`examples/variational_autoencoders/vae.py <https://github.com/McGrady00H/Zhusuan-Jittor/blob/main/examples/variational_autoencoders/vae_mnist.py>`_.
 
 The generative process of a VAE for modeling binarized
-`MNIST <https://www.tensorflow.org/get_started/mnist/beginners>`_ data is as
+`MNIST <http://yann.lecun.com/exdb/mnist/>`_ data is as
 follows:
 
 .. math::
@@ -33,34 +33,43 @@ Build the model
 
 In ZhuSuan, a model is constructed using
 :class:`~zhusuan.framework.bn.BayesianNet`, which describes a directed
-graphical model, i.e., Bayesian networks.
-The suggested practice is to wrap model construction into a function (
-we shall see the meanings of these arguments soon)::
+graphical model, i.e., Bayesian networks. ::
 
     import zhusuan as zs
 
-    def build_gen(x_dim, z_dim, n, n_particles=1):
-        bn = zs.BayesianNet()
+    class Generator(BayesianNet):
+        def __init__(self, x_dim, z_dim, batch_size):
+            # Initialize...
+        def execute(self, observed):
+            # Forward propagation...
+            
 
 Following the generative process, first we need a standard Normal
 distribution to generate the latent representations (:math:`z`).
 As presented in our graphical model, the data is generated in batches with
 batch size ``n``, and for each data, the latent representation is of
 dimension ``z_dim``.
-So we add a stochastic node by ``bn.normal`` to generate samples of shape
+So we add a stochastic node by ``stochastic_node`` method to generate samples of shape
 ``[n, z_dim]``::
 
     # z ~ N(z|0, I)
-    z_mean = tf.zeros([n, z_dim])
-    z = bn.normal("z", z_mean, std=1., group_ndims=1, n_samples=n_particles)
+    mean = jt.zeros([batch_size, z_dim])
+    std = jt.ones([batch_size, z_dim])
+
+    z = self.stochastic_node('Normal',
+                             name='z',
+                             mean=mean,
+                             std=std,
+                             reparameterize=False,
+                             reduce_mean_dims=[0],
+                             reduce_sum_dims=[1])
 
 The method ``bn.normal`` is a helper function that creates a
-:class:`~zhusuan.distributions.univariate.Normal` distribution and adds a
+:class:`~zhusuan.distributions.normal.Normal` distribution and adds a
 stochastic node that follows this distribution to the
 :class:`~zhusuan.framework.bn.BayesianNet` instance.
-The returned ``z`` is a :class:`~zhusuan.framework.bn.StochasticTensor`, which
-is Tensor-like and can be mixed with Tensors and fed into almost any
-Tensorflow primitives.
+The returned ``z`` is a sample of :class:`~zhusuan.framework.bn.StochasticTensor`, which 
+can be mixed with Vars and fed into any Jittor operations.
 
 .. note::
 
@@ -70,165 +79,187 @@ Tensorflow primitives.
 
 The shape of ``z_mean`` is ``[n, z_dim]``, which means that
 we have ``[n, z_dim]`` independent inputs fed into the univariate
-:class:`~zhusuan.distributions.univariate.Normal` distribution.
-Because the input parameters are allowed to
-`broadcast <https://docs.scipy.org/doc/numpy-1.12.0/user/basics.broadcasting.html>`_
-to match each other's shape, the standard deviation ``std`` is simply set to
-1.
-Thus the shape of samples and probabilities evaluated at this node should
+:class:`~zhusuan.distributions.normal.Normal` distribution. 
+The shape of samples and probabilities evaluated at this node should
 be of shape ``[n, z_dim]``. However, what we want in modeling MNIST data, is a
 batch of ``[n]`` independent events, with each one producing samples of ``z``
 that is of shape ``[z_dim]``, which is the dimension of latent representations.
 And the probabilities in every single event in the batch should be evaluated
 together, so the shape of local probabilities should be ``[n]`` instead of
-``[n, z_dim]``.
-In ZhuSuan, the way to achieve this is by setting `group_ndims``, as we do
-in the above model definition code.
-To help understand this, several other examples can be found in :ref:`dist`
-tutorial.
-``n_samples`` is the number of samples to generate.
-It is None by default, in which case a single sample is generated
-without adding a new dimension.
+``[n, z_dim]``. In ZhuSuan-Jittor, the way to achieve this is by setting ``reduce_mean_dims`` and ``reduce_sum_dims``.
 
 Then we build a neural network of two fully-connected layers with :math:`z` 
 as the input, which is supposed to learn the complex transformation that
 generates images from their latent representations::
 
     # x_logits = f_NN(z)
-    h = tf.layers.dense(z, 500, activation=tf.nn.relu)
-    h = tf.layers.dense(h, 500, activation=tf.nn.relu)
-    x_logits = tf.layers.dense(h, x_dim)
+    # In __init__
+    self.fc1 = nn.Linear(z_dim, 500)
+    self.act1 = nn.Relu()
+    self.fc2 = nn.Linear(500, 500)
+    self.act2 = nn.Relu()
+    self.fc2_ = nn.Linear(500, x_dim)
+    
+    # In execute
+    x_logits = self.fc2_(self.act2(self.fc2(self.act1(self.fc1(z)))))
 
 Next, we add an observation distribution (noise) that follows the Bernoulli
 distribution to get a tractable likelihood when evaluating the probability
 of an image::
 
     # x ~ Bernoulli(x|sigmoid(x_logits))
-    bn.bernoulli("x", x_logits, group_ndims=1)
+    x_probs = nn.Sigmoid()(x_logits)
+    self.sn('Bernoulli',
+            name='x',
+            probs=x_probs,
+            reduce_mean_dims=[0],
+            reduce_sum_dims=[1])
 
 .. note::
 
-    The :class:`~zhusuan.distributions.univariate.Bernoulli` distribution
+    The :class:`~zhusuan.distributions.bernoulli.Bernoulli` distribution
     accepts log-odds of probabilities instead of probabilities.
-    This is designed for numeric stability reasons. Similar tricks are used in
-    :class:`~zhusuan.distributions.univariate.Categorical` , which accepts
-    log-probabilities instead of probabilities.
+    This is designed for numeric stability reasons. 
 
 Putting together, the code for constructing a VAE is::
 
-    def build_gen(x_dim, z_dim, n, n_particles=1):
-        bn = zs.BayesianNet()
-        z_mean = tf.zeros([n, z_dim])
-        z = bn.normal("z", z_mean, std=1., group_ndims=1, n_samples=n_particles)
-        h = tf.layers.dense(z, 500, activation=tf.nn.relu)
-        h = tf.layers.dense(h, 500, activation=tf.nn.relu)
-        x_logits = tf.layers.dense(h, x_dim)
-        bn.bernoulli("x", x_logits, group_ndims=1)
+    class Generator(BayesianNet):
+        def __init__(self, x_dim, z_dim, batch_size):
+            super().__init__()
+            self.x_dim = x_dim
+            self.z_dim = z_dim
+            self.batch_size = batch_size
 
-Reuse the model
----------------
+            self.fc1 = nn.Linear(z_dim, 500)
+            self.act1 = nn.Relu()
+            self.fc2 = nn.Linear(500, 500)
+            self.act2 = nn.Relu()
 
-Unlike common deep learning models (MLP, CNN, etc.), which is for supervised
-tasks, a key difficulty in designing programing primitives for generative
-models is their inner reusability.
-This is because in a probabilistic graphical model, a stochastic node can
-have two kinds of states, **observed or latent**.
-Consider the above case, if ``z`` is a tensor sampled from the prior, how
-about when you meet the condition that ``z`` is observed?
-In common practice of tensorflow programming, one has to build another
-computation graph from scratch and reuse the Variables (weights here).
-If there are many stochastic nodes in the model, this process will be really
-painful.
+            self.fc2_ = nn.Linear(500, x_dim)
+            self.act2_ = nn.Sigmoid()
 
-We provide a solution for this. To observe any stochastic nodes,
-pass a dictionary mapping of ``(name, Tensor)`` pairs when constructing
-:class:`~zhusuan.framework.bn.BayesianNet`.
-This will assign observed values to corresponding ``StochasticTensor`` s.
-For example, to observe a batch of images ``x_batch``, write::
+        def execute(self, observed):
+            self.observe(observed)
+            mean = jt.zeros([self.batch_size, self.z_dim])
+            std = jt.ones([self.batch_size, self.z_dim])
 
-    bn = zs.BayesianNet(observed={"x": x_batch})
+            z = self.sn('Normal',
+                        name='z',
+                        mean=mean,
+                        std=std,
+                        reparameterize=False,
+                        reduce_mean_dims=[0],
+                        reduce_sum_dims=[1])
+            x_mean = self.act2_(self.fc2_(self.act2(self.fc2(self.act1(self.fc1(z))))))
+            sample_x = self.sn('Bernoulli',
+                            name='x',
+                            probs=x_mean,
+                            reduce_mean_dims=[0],
+                            reduce_sum_dims=[1])
+            return self
 
-.. note::
+    generator = Generator(x_dim, z_dim, batch_size)
 
-    The observation passed must have the same type and shape as the
-    `StochasticTensor`.
+.. Reuse the model
+.. ---------------
 
-However, we usually need to pass different configurations of observations to
-the same :class:`~zhusuan.framework.bn.BayesianNet` more than once.
-To achieve this, ZhuSuan provides a new class called
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet`
-to represent the meta version of :class:`~zhusuan.framework.bn.BayesianNet`
-which can repeatedly produce :class:`~zhusuan.framework.bn.BayesianNet`
-objects by accepting different observations.
-The recommended way to construct a
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet` is by wrapping the
-function with a :func:`~zhusuan.framework.meta_bn.meta_bayesian_net`
-decorator::
+.. Unlike common deep learning models (MLP, CNN, etc.), which is for supervised
+.. tasks, a key difficulty in designing programing primitives for generative
+.. models is their inner reusability.
+.. This is because in a probabilistic graphical model, a stochastic node can
+.. have two kinds of states, **observed or latent**.
+.. Consider the above case, if ``z`` is a var sampled from the prior, how
+.. about when you meet the condition that ``z`` is observed?
 
-    @zs.meta_bayesian_net(scope="gen")
-    def build_gen(x_dim, z_dim, n, n_particles=1):
-        ...
-        return bn
+.. We provide a solution for this. To observe any stochastic nodes,
+.. pass a dictionary mapping of ``(name, Tensor)`` pairs when constructing
+.. :class:`~zhusuan.framework.bn.BayesianNet`.
+.. This will assign observed values to corresponding ``StochasticTensor`` s.
+.. For example, to observe a batch of images ``x_batch``, write::
 
-    model = build_gen(x_dim, z_dim, n, n_particles)
+..     bn = zs.BayesianNet(observed={"x": x_batch})
 
-which transforms the function into returning a
-:class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instance::
+.. .. note::
 
-    >>> print(model)
-    <zhusuan.framework.meta_bn.MetaBayesianNet object at ...
+..     The observation passed must have the same type and shape as the
+..     `StochasticTensor`.
 
-so that we can observe stochastic nodes in this way::
+.. However, we usually need to pass different configurations of observations to
+.. the same :class:`~zhusuan.framework.bn.BayesianNet` more than once.
+.. To achieve this, ZhuSuan provides a new class called
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet`
+.. to represent the meta version of :class:`~zhusuan.framework.bn.BayesianNet`
+.. which can repeatedly produce :class:`~zhusuan.framework.bn.BayesianNet`
+.. objects by accepting different observations.
+.. The recommended way to construct a
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` is by wrapping the
+.. function with a :func:`~zhusuan.framework.meta_bn.meta_bayesian_net`
+.. decorator::
 
-    # no observation
-    bn1 = model.observe()
+..     @zs.meta_bayesian_net(scope="gen")
+..     def build_gen(x_dim, z_dim, n, n_particles=1):
+..         ...
+..         return bn
 
-    # observe x
-    bn2 = model.observe(x=x_batch)
+..     model = build_gen(x_dim, z_dim, n, n_particles)
 
-Each time the function is called, a different observation assignment is used
-to construct a :class:`~zhusuan.framework.bn.BayesianNet` instance.
-One question you may have in mind is that if there are Tensorflow
-`Variables <https://www.tensorflow.org/api_docs/python/tf/Variable>`_
-created in the above function, will them be reused across these ``bn`` s?
-The answer is no by default, but you can enable this by switching on the
-`reuse_variables` option in the decorator::
+.. which transforms the function into returning a
+.. :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` instance::
 
-    @zs.meta_bayesian_net(scope="gen", reuse_variables=True)
-    def build_gen(x_dim, z_dim, n, n_particles=1):
-        ...
-        return bn
+..     >>> print(model)
+..     <zhusuan.framework.meta_bn.MetaBayesianNet object at ...
 
-    model = build_gen(x_dim, z_dim, n, n_particles)
+.. so that we can observe stochastic nodes in this way::
 
-Then ``bn1`` and ``bn2`` will share the same set of Tensorflow Variables.
+..     # no observation
+..     bn1 = model.observe()
 
-.. note::
+..     # observe x
+..     bn2 = model.observe(x=x_batch)
 
-    This only shares Tensorflow Variables across different
-    :class:`~zhusuan.framework.bn.BayesianNet` instances generated by the same
-    :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` through the
-    :meth:`~zhusuan.framework.meta_bn.MetaBayesianNet.observe` method.
-    Creating multiple :class:`~zhusuan.framework.meta_bn.MetaBayesianNet`
-    objects will recreate the tensorflow Variables, for example, in
+.. Each time the function is called, a different observation assignment is used
+.. to construct a :class:`~zhusuan.framework.bn.BayesianNet` instance.
+.. One question you may have in mind is that if there are Tensorflow
+.. `Variables <https://www.tensorflow.org/api_docs/python/tf/Variable>`_
+.. created in the above function, will them be reused across these ``bn`` s?
+.. The answer is no by default, but you can enable this by switching on the
+.. `reuse_variables` option in the decorator::
 
-    ::
+..     @zs.meta_bayesian_net(scope="gen", reuse_variables=True)
+..     def build_gen(x_dim, z_dim, n, n_particles=1):
+..         ...
+..         return bn
 
-        m = build_gen(x_dim, z_dim, n, n_particles)
-        bn = m.observe()
+..     model = build_gen(x_dim, z_dim, n, n_particles)
 
-        m_new = build_gen(x_dim, z_dim, n, n_particles)
-        bn_new = m_new.observe()
+.. Then ``bn1`` and ``bn2`` will share the same set of Tensorflow Variables.
 
-    ``bn`` and ``bn_new`` will use a different set of Tensorflow
-    Variables.
+.. .. note::
 
-Since reusing Tensorflow Variables in repeated function calls is a typical
-need, we provide another decorator
-:func:`~zhusuan.framework.utils.reuse_variables` for the more general cases.
-Any function decorated by :func:`~zhusuan.framework.utils.reuse_variables`
-will automatically create Tensorflow Variables the first time they are called
-and reuse them thereafter.
+..     This only shares Tensorflow Variables across different
+..     :class:`~zhusuan.framework.bn.BayesianNet` instances generated by the same
+..     :class:`~zhusuan.framework.meta_bn.MetaBayesianNet` through the
+..     :meth:`~zhusuan.framework.meta_bn.MetaBayesianNet.observe` method.
+..     Creating multiple :class:`~zhusuan.framework.meta_bn.MetaBayesianNet`
+..     objects will recreate the tensorflow Variables, for example, in
+
+..     ::
+
+..         m = build_gen(x_dim, z_dim, n, n_particles)
+..         bn = m.observe()
+
+..         m_new = build_gen(x_dim, z_dim, n, n_particles)
+..         bn_new = m_new.observe()
+
+..     ``bn`` and ``bn_new`` will use a different set of Tensorflow
+..     Variables.
+
+.. Since reusing Tensorflow Variables in repeated function calls is a typical
+.. need, we provide another decorator
+.. :func:`~zhusuan.framework.utils.reuse_variables` for the more general cases.
+.. Any function decorated by :func:`~zhusuan.framework.utils.reuse_variables`
+.. will automatically create Tensorflow Variables the first time they are called
+.. and reuse them thereafter.
 
 Inference and learning
 ----------------------
@@ -249,7 +280,7 @@ where :math:`\theta` is the model parameter.
 .. note::
 
     In this variational autoencoder, the model parameter is the network
-    weights, in other words, it's the Tensorflow Variables created in the
+    weights, in other words, it's the Jittor Vars created in the
     ``fully_connected`` layers.
 
 However, the model we defined has not only the observation (:math:`x`) but
@@ -324,27 +355,50 @@ is also parameterized by a neural network (:math:`g`), which accepts input
 In ZhuSuan, the variational posterior can also be defined as a
 :class:`~zhusuan.framework.bn.BayesianNet` . The code for above definition is::
 
-    @zs.reuse_variables(scope="q_net")
-    def build_q_net(x, z_dim, n_z_per_x):
-        bn = zs.BayesianNet()
-        h = tf.layers.dense(tf.cast(x, tf.float32), 500, activation=tf.nn.relu)
-        h = tf.layers.dense(h, 500, activation=tf.nn.relu)
-        z_mean = tf.layers.dense(h, z_dim)
-        z_logstd = tf.layers.dense(h, z_dim)
-        bn.normal("z", z_mean, logstd=z_logstd, group_ndims=1, n_samples=n_z_per_x)
-        return bn
+    class Variational(BayesianNet):
+        def __init__(self, x_dim, z_dim, batch_size):
+            super().__init__()
+            self.x_dim = x_dim
+            self.z_dim = z_dim
+            self.batch_size = batch_size
 
-    variational = build_q_net(x, z_dim, n_particles)
+            self.fc1 = nn.Linear(x_dim, 500)
+            self.act1 = nn.Relu()
+            self.fc2 = nn.Linear(500, 500)
+            self.act2 = nn.Relu()
 
-Having both ``model`` and ``variational``, we can build the lower bound as::
+            self.fc3 = nn.Linear(500, z_dim)
+            self.fc4 = nn.Linear(500, z_dim)
 
-    lower_bound = zs.variational.elbo(
-        model, {"x": x}, variational=variational, axis=0)
+            self.dist = None
+
+        def execute(self, observed):
+            self.observe(observed)
+            x = self.observed['x']
+            z_logits = self.act2(self.fc2(self.act1(self.fc1(x))))
+
+            z_mean = self.fc3(z_logits)
+            z_std = jt.exp(self.fc4(z_logits))
+
+            z = self.sn('Normal',
+                        name='z',
+                        mean=z_mean,
+                        std=z_std,
+                        reparameterize=True,
+                        reduce_mean_dims=[0],
+                        reduce_sum_dims=[1])
+            return self
+
+    variational = Variational(x_dim, z_dim, batch_size)
+
+Having both ``model`` and ``variational``, we can build a model which calculate the lower bound as::
+
+    model = zs.variational.ELBO(generator, variational)
 
 The returned ``lower_bound`` is an
-:class:`~zhusuan.variational.exclusive_kl.EvidenceLowerBoundObjective`
-instance, which is also Tensor-like and can be evaluated directly. However,
-optimizing this lower bound objective needs special care.
+:class:`~zhusuan.variational.elbo.EvidenceLowerBoundObjective`
+instance, which is a derivativation of Jittor's `Module`. However,
+optimizing the lower bound objective needs special care.
 The easiest way is to do
 `stochastic gradient descent <https://en.wikipedia.org/wiki/Stochastic_gradient_descent>`_
 (SGD), which is very common in deep learning literature.
@@ -355,7 +409,7 @@ This often induces large variance if not properly handled.
 .. note::
 
     Directly using auto-differentiation to compute the gradients of
-    :class:`~zhusuan.variational.exclusive_kl.EvidenceLowerBoundObjective`
+    :class:`~zhusuan.variational.elbo.EvidenceLowerBoundObjective`
     often gives you the wrong results.
     This is because auto-differentiation is not designed to handle
     expectations.
@@ -385,10 +439,7 @@ instance.
 The code for this part is::
 
     # the surrogate cost for optimization
-    cost = tf.reduce_mean(lower_bound.sgvb())
-
-    # the lower bound value to print for monitoring convergence
-    lower_bound = tf.reduce_mean(lower_bound)
+    lower_bound = model({'x': batch_x})
 
 
 .. note::
@@ -433,86 +484,73 @@ The code for this part is::
 
 Now that we have had the cost, the next step is to do the stochastic gradient
 descent.
-Tensorflow provides many advanced
-`optimizers <https://www.tensorflow.org/api_guides/python/train>`_
+Jittor provides many advanced
+`optimizers <https://cg.cs.tsinghua.edu.cn/jittor/assets/docs/jittor.optim.html>`_
 that improves the plain SGD, among which Adam :cite:`vae-kingma2014adam`
 is probably the most popular one in deep learning society.
-Here we are going to use Tensorflow's Adam optimizer to do the learning::
+Here we are going to use Jittor's Adam optimizer to do the learning::
 
-    optimizer = tf.train.AdamOptimizer(0.001)
-    infer_op = optimizer.minimize(cost)
+    optimizer = jt.optim.Adam(model.parameters(), 1e-3)
+    
+    # During each iter
+    optimizer.step(lower_bound)
 
 Generate images
 ---------------
 
 What we've done above is to define and learn the model. To see how it
 performs, we would like to let it generate some images in the learning process.
-To improve the visual quality of generation, we remove the observation noise,
-i.e., the :class:`~zhusuan.distributions.univariate.Bernoulli` distribution.
-We do this by using the direct output of the neural network (``x_logits``)::
+We put the Var ``x_mean``  in the `cache` of ``Generator`` to keep track of it. ::
 
-    @zs.meta_bayesian_net(scope="gen", reuse_variables=True)
-    def build_gen(x_dim, z_dim, n, n_particles=1):
-        bn = zs.BayesianNet()
-            ...
-        x_logits = tf.layers.dense(h, x_dim)
-            ...
+    class Generator(BayesianNet):
+    def __init__(self, x_dim, z_dim, batch_size):
+        ...
 
-and adding a sigmoid function to it to get a "mean" image.
-After that, we add a deterministic node in ``bn`` to keep track of
-the Tensor ``x_mean``::
-
-    @zs.meta_bayesian_net(scope="gen", reuse_variables=True)
-    def build_gen(x_dim, z_dim, n, n_particles=1):
-        bn = zs.BayesianNet()
-            ...
-        x_logits = tf.layers.dense(h, x_dim)
-        bn.deterministic("x_mean", tf.sigmoid(x_logits))
-            ...
+    def execute(self, observed):
+        ...
+        x_probs = self.act2_(self.fc2_(self.act2(self.fc2(self.act1(self.fc1(z))))))
+        self.cache['x_mean'] = x_probs
+        self.sn('Bernoulli',
+                name='x',
+                probs=x_probs,
+                reduce_mean_dims=[0],
+                reduce_sum_dims=[1])
+        ...
 
 so that we can easily access it from a
 :class:`~zhusuan.framework.bn.BayesianNet` instance.
 For random generations, no observation about the model is made, so we
-construct the corresponding :class:`~zhusuan.framework.bn.BayesianNet` by::
+pass an empty observation to the model and get the generated sample by the ``cache['x_mean']`` of
+``Generator``::
 
-    bn_gen = model.observe()
-
-Then the generated samples can be fetched from the ``x_mean`` node of
-``bn_gen``::
-
-    x_gen = tf.reshape(bn_gen["x_mean"], [-1, 28, 28, 1])
+    cache = generator({}).cache
+    sample_gen = cache['x_mean']
 
 Run gradient descent
 --------------------
 
 Now, everything is good before a run.
-So we could just open the Tensorflow session, run the training loop,
-print statistics, and write generated images to disk::
+So we could just run the training loop,
+print statistics, and write generated images to disk using Jittor::
 
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
+    for epoch in range(epoch_size):
+        for step in range(num_batches):
+            x = jt.array(x_train[step * batch_size:min((step + 1) * batch_size, len_)])
+            x = jt.reshape(x, [-1, x_dim])
+            if x.shape[0] != batch_size:
+                break
+            loss = model({'x': x})
+            optimizer.step(loss)
+            if (step + 1) % 100 == 0:
+                print("Epoch[{}/{}], Step [{}/{}], Loss: {:.4f}".format(epoch + 1, epoch_size, step + 1, num_batches,
+                                                                        float(loss.numpy())))
+    
+    batch_x = x_test[0:64]
+    batch_x = jt.array(batch_x)
 
-        for epoch in range(1, epochs + 1):
-            time_epoch = -time.time()
-            np.random.shuffle(x_train)
-            lbs = []
-            for t in range(iters):
-                x_batch = x_train[t * batch_size:(t + 1) * batch_size]
-                _, lb = sess.run([infer_op, lower_bound],
-                                 feed_dict={x_input: x_batch,
-                                            n_particles: 1,
-                                            n: batch_size})
-                lbs.append(lb)
-            time_epoch += time.time()
-            print("Epoch {} ({:.1f}s): Lower bound = {}".format(
-                epoch, time_epoch, np.mean(lbs)))
+    cache = generator({}).cache
+    sample_gen = cache['x_mean'].numpy()
 
-
-            if epoch % save_freq == 0:
-                images = sess.run(x_gen, feed_dict={n: 100, n_particles: 1})
-                name = os.path.join(result_path,
-                                    "vae.epoch.{}.png".format(epoch))
-                save_image_collections(images, name)
 
 Below is a sample image of random generations from the model.
 Keep watching them and have fun :)

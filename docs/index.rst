@@ -9,12 +9,12 @@ Welcome to ZhuSuan-Jittor
 .. image:: _static/images/index.png
     :align: center
 
-ZhuSuan-PaddlePaddle is a python probabilistic programming library for
+ZhuSuan-Jittor is a python probabilistic programming library for
 **Bayesian deep learning**, which conjoins the complimentary advantages of
 Bayesian methods and deep learning. ZhuSuan is built upon
-`PaddlePaddle <https://www.paddlepaddle.org.cn/>`_. Unlike existing deep learning
+`Jittor <https://cg.cs.tsinghua.edu.cn/jittor/>`_. Unlike existing deep learning
 libraries, which are mainly designed for deterministic neural networks and
-supervised tasks, ZhuSuan-PaddlePaddle provides deep learning style primitives and
+supervised tasks, ZhuSuan-Jittor provides deep learning style primitives and
 algorithms for building probabilistic models and applying Bayesian inference.
 The supported inference algorithms include:
 
@@ -32,17 +32,17 @@ The supported inference algorithms include:
 Installation
 ------------
 
-ZhuSuan-PaddlePaddle is still under development. Before the first stable release (1.0),
-please clone the `GitHub repository <https://github.com/McGrady00H/Zhusuan-PaddlePaddle/>`_ and
+ZhuSuan-Jittor is still under development. Before the first stable release (1.0),
+please clone the `GitHub repository <https://github.com/McGrady00H/Zhusuan-Jittor/>`_ and
 run
 ::
 
    pip install .
 
-in the main directory. This will install ZhuSuan-PaddlePaddle and its dependencies
-automatically. Notice that currently ZhuSuan-PaddlePaddle is built on PaddlePaddle version 2.0rc.
+in the main directory. This will install ZhuSuan-Jittor and its dependencies
+automatically. ZhuSuan-Jittor is compatible with the lastest version of Jittor.
 
-If you are developing ZhuSuan-PaddlePaddle, you may want to install in an "editable" or
+If you are developing ZhuSuan-Jittor, you may want to install in an "editable" or
 "develop" mode. Please refer to the Contributing section.
 
 After installation, open your python console and type::
@@ -71,7 +71,8 @@ If no error occurs, you've successfully installed ZhuSuan.
    api/zhusuan.framework
    api/zhusuan.variational
    api/zhusuan.mcmc
-   api/zhusuan.evaluation
+   api/zhusuan.flows
+   api/zhusuan.transforms
 
 .. toctree::
    :maxdepth: 1

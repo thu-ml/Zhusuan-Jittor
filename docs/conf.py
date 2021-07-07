@@ -37,6 +37,8 @@ extensions = ['sphinx.ext.doctest',
               'sphinxcontrib.bibtex',
               'sphinx.ext.intersphinx']
 
+bibtex_bibfiles = ['refs.bib']
+
 mathjax_path = 'https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.3/MathJax.js?config=TeX-AMS-MML_HTMLorMML'
 
 # Add any paths that contain templates here, relative to this directory.
@@ -122,7 +124,7 @@ html_logo = '_static/images/zhusuan-jittor.png'
 
 
 def setup(app):
-    app.add_stylesheet("css/style.css")
+    app.add_css_file("css/style.css")
 
 
 # html_sidebars = {

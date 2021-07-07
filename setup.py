@@ -86,9 +86,9 @@ setup(
     # $ pip install -e .[dev,test]
     extras_require={
         'dev': [
-            'Sphinx>=1.7.1',
+            'Sphinx>=4.0.2',
             'sphinx_rtd_theme',
-            'sphinxcontrib-bibtex>=0.3.6',
+            'sphinxcontrib-bibtex>=2.3.0',
             'pep8',
             'scipy',
             'coverage',

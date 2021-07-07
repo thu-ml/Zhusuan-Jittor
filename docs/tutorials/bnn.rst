@@ -25,7 +25,7 @@ which both fits to the training data and reasons about the uncertainty of
 its own prediction on test data.
 In this tutorial, we show how to implement BNNs in ZhuSuan.
 The full script for this tutorial is at
-`examples/bayesian_neural_nets/bnn_vi.py <https://github.com/thu-ml/zhusuan/blob/master/examples/bayesian_neural_nets/bnn_vi.py>`_.
+`examples/bayesian_neural_nets/bnn_vi.py <https://github.com/McGrady00H/Zhusuan-Jittor/blob/main/examples/bayesian_neural_nets/bnn_vi.py>`_.
 
 We use a regression dataset called
 `Boston housing <https://archive.ics.uci.edu/ml/machine-learning-databases/housing/>`_.
@@ -59,9 +59,9 @@ Build the model
 We start by the model building function (we shall see the meanings of
 these arguments later)::
 
-    @zs.meta_bayesian_net(scope="bnn", reuse_variables=True)
-    def build_bnn(x, layer_sizes, n_particles):
-        bn = zs.BayesianNet()
+    class Net(BayesianNet):
+        def __init__(self, layer_sizes, n_particles):
+            super().__init__()
 
 Following the generative process, we need standard Normal
 distributions to generate the weights (:math:`\{W_i\}_{i=1}^L`) in each layer.
@@ -71,10 +71,15 @@ To support multiple samples (useful in inference and prediction), a common
 practice is to set the `n_samples` argument to a placeholder, which we
 choose to be ``n_particles`` here::
 
-    h = tf.tile(x[None, ...], [n_particles, 1, 1])
-    for i, (n_in, n_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
-        w = bn.normal("w" + str(i), tf.zeros([n_out, n_in + 1]), std=1.,
-                      group_ndims=2, n_samples=n_particles)
+    h = jt.repeat(x, [self.n_particles, *len(x.shape) * [1]])
+    for i, (n_in, n_out) in enumerate(zip(self.layer_sizes[:-1], self.layer_sizes[1:])):
+        w = self.sn('Normal',
+                    name='w' + str(i),
+                    mean=jt.zeros([n_out, n_in + 1]),
+                    std=jt.ones([n_out, n_in + 1]),
+                    group_ndims=2,
+                    n_samples=self.n_particles,
+                    reduce_mean_dims=[0])
 
 Note that we expand ``x`` with a new dimension and tile it to enable
 computation with multiple particles of weight samples.
@@ -85,43 +90,86 @@ If you are unfamiliar with this property, see :ref:`dist` for details.
 Then we write the feed-forward process of neural networks, through which the
 connection between output ``y`` and input ``x`` is established::
 
-    for i, (n_in, n_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
-        w = bn.normal("w" + str(i), tf.zeros([n_out, n_in + 1]), std=1.,
-                      group_ndims=2, n_samples=n_particles)
-        h = tf.concat([h, tf.ones(tf.shape(h)[:-1])[..., None]], -1)
-        h = tf.einsum("imk,ijk->ijm", w, h) / tf.sqrt(
-            tf.cast(tf.shape(h)[2], tf.float32))
-        if i < len(layer_sizes) - 2:
-            h = tf.nn.relu(h)
+    for i, (n_in, n_out) in enumerate(zip(self.layer_sizes[:-1], self.layer_sizes[1:])):
+        w = self.sn('Normal',
+                    name='w' + str(i),
+                    mean=jt.zeros([n_out, n_in + 1]),
+                    std=jt.ones([n_out, n_in + 1]),
+                    group_ndims=2,
+                    n_samples=self.n_particles,
+                    reduce_mean_dims=[0])
+                    w = jt.unsqueeze(w, 1)
+        w = jt.repeat(w, [1, batch_size, 1, 1])
+        h = jt.contrib.concat([h, jt.ones([*h.shape[:-1], 1])], -1)
+        h = jt.unsqueeze(h, -1)
+        p = jt.sqrt(jt.array(h.shape[2], dtype='float32'))
+        h = nn.matmul(w, h) / p
+        h = jt.squeeze(h, -1)
+        if i < len(self.layer_sizes) - 2:
+            h = nn.ReLU()(h)
 
 Next, we add an observation distribution (noise) to get a tractable
 likelihood when evaluating the probability::
 
-    y_mean = bn.deterministic("y_mean", tf.squeeze(h, 2))
-    y_logstd = tf.get_variable("y_logstd", shape=[],
-                               initializer=tf.constant_initializer(0.))
-    bn.normal("y", y_mean, logstd=y_logstd)
+    y_mean = jt.squeeze(h, 2)
+    y = self.observed['y']
+
+    self.sn('Normal',
+            name='y',
+            mean=y_mean,
+            logstd=self.y_logstd,
+            reparameterize=True,
+            reduce_mean_dims=[0, 1],
+            multiplier=456)  # training data size
 
 Putting together and adding model reuse, the code for constructing a BNN is::
 
-    @zs.meta_bayesian_net(scope="bnn", reuse_variables=True)
-    def build_bnn(x, layer_sizes, n_particles):
-        bn = zs.BayesianNet()
-        h = tf.tile(x[None, ...], [n_particles, 1, 1])
-        for i, (n_in, n_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
-            w = bn.normal("w" + str(i), tf.zeros([n_out, n_in + 1]), std=1.,
-                          group_ndims=2, n_samples=n_particles)
-            h = tf.concat([h, tf.ones(tf.shape(h)[:-1])[..., None]], -1)
-            h = tf.einsum("imk,ijk->ijm", w, h) / tf.sqrt(
-                tf.cast(tf.shape(h)[2], tf.float32))
-            if i < len(layer_sizes) - 2:
-                h = tf.nn.relu(h)
+    class Net(BayesianNet):
+        def __init__(self, layer_sizes, n_particles):
+            super().__init__()
+            self.layer_sizes = layer_sizes
+            self.n_particles = n_particles
+            self.y_logstd = jt.init.constant([1], 'float32')
 
-        y_mean = bn.deterministic("y_mean", tf.squeeze(h, 2))
-        y_logstd = tf.get_variable("y_logstd", shape=[],
-                                   initializer=tf.constant_initializer(0.))
-        bn.normal("y", y_mean, logstd=y_logstd)
-        return bn
+        def execute(self, observed):
+            self.observe(observed)
+            x = self.observed['x']
+            h = jt.repeat(x, [self.n_particles, *len(x.shape) * [1]])
+
+            batch_size = x.shape[0]
+
+            for i, (n_in, n_out) in enumerate(zip(self.layer_sizes[:-1], self.layer_sizes[1:])):
+                w = self.sn('Normal',
+                            name='w' + str(i),
+                            mean=jt.zeros([n_out, n_in + 1]),
+                            std=jt.ones([n_out, n_in + 1]),
+                            group_ndims=2,
+                            n_samples=self.n_particles,
+                            reduce_mean_dims=[0])
+                w = jt.unsqueeze(w, 1)
+                w = jt.repeat(w, [1, batch_size, 1, 1])
+                h = jt.contrib.concat([h, jt.ones([*h.shape[:-1], 1])], -1)
+                h = jt.unsqueeze(h, -1)
+                p = jt.sqrt(jt.array(h.shape[2], dtype='float32'))
+                h = nn.matmul(w, h) / p
+                h = jt.squeeze(h, -1)
+
+                if i < len(self.layer_sizes) - 2:
+                    h = nn.ReLU()(h)
+            y_mean = jt.squeeze(h, 2)
+
+            y = self.observed['y']
+            y_pred = jt.mean(y_mean, 0)
+            self.cache['rmse'] = jt.sqrt(jt.mean((y - y_pred) ** 2))
+
+            self.sn('Normal',
+                    name='y',
+                    mean=y_mean,
+                    logstd=self.y_logstd,
+                    reparameterize=True,
+                    reduce_mean_dims=[0, 1],
+                    multiplier=456)  # training data size
+            return self
 
 Inference
 ---------
@@ -151,19 +199,39 @@ by its mean and log standard deviation.
 
 The code for above definition is::
 
-    @zs.reuse_variables(scope="variational")
-    def build_mean_field_variational(layer_sizes, n_particles):
-        bn = zs.BayesianNet()
-        for i, (n_in, n_out) in enumerate(zip(layer_sizes[:-1], layer_sizes[1:])):
-            w_mean = tf.get_variable(
-                "w_mean_" + str(i), shape=[n_out, n_in + 1],
-                initializer=tf.constant_initializer(0.))
-            w_logstd = tf.get_variable(
-                "w_logstd_" + str(i), shape=[n_out, n_in + 1],
-                initializer=tf.constant_initializer(0.))
-            bn.normal("w" + str(i), w_mean, logstd=w_logstd,
-                      n_samples=n_particles, group_ndims=2)
-        return bn
+    class Variational(BayesianNet):
+        def __init__(self, layer_sizes, n_particles):
+            super().__init__()
+            self.layer_sizes = layer_sizes
+            self.n_particles = n_particles
+
+            self.w_means = []
+            self.w_logstds = []
+
+            for i, (n_in, n_out) in enumerate(zip(self.layer_sizes[:-1], self.layer_sizes[1:])):
+                w_mean = jt.init.constant([n_out, n_in + 1], 'float32')
+                _name = 'w_mean_' + str(i)
+                w_mean = w_mean.name(_name)
+                self.__dict__[_name] = w_mean
+                w_logstd = jt.init.constant([n_out, n_in + 1], 'float32')
+                _name = 'w_logstd_' + str(i)
+                w_logstd = w_logstd.name(_name)
+                self.__dict__[_name] = w_logstd
+                self.w_means.append(w_mean)
+                self.w_logstds.append(w_logstd)
+
+        def execute(self, observed):
+            self.observe(observed)
+            for i, (n_in, n_out) in enumerate(zip(self.layer_sizes[:-1], self.layer_sizes[1:])):
+                self.sn('Normal',
+                        name='w' + str(i),
+                        mean=self.w_means[i],
+                        logstd=self.w_logstds[i],
+                        group_ndims=2,
+                        n_samples=self.n_particles,
+                        reparameterize=True,
+                        reduce_mean_dims=[0])
+            return self
 
 In Variational Inference, to make :math:`q_{\phi}(W)` approximate
 :math:`p(W|x_{1:N}, y_{1:N})` well.
@@ -219,22 +287,10 @@ As we have done in the :doc:`VAE tutorial <vae>`,
 the **Stochastic Gradient Variational Bayes** (SGVB) estimator is used.
 The code for this part is::
 
-    model = build_bnn(x, layer_sizes, n_particles)
-    variational = build_mean_field_variational(layer_sizes, n_particles)
+    net = Net(layer_sizes, n_particles)
+    variational = Variational(layer_sizes, n_particles)
 
-    def log_joint(bn):
-        log_pws = bn.cond_log_prob(w_names)
-        log_py_xw = bn.cond_log_prob('y')
-        return tf.add_n(log_pws) + tf.reduce_mean(log_py_xw, 1) * n_train
-
-    model.log_joint = log_joint
-
-    lower_bound = zs.variational.elbo(
-        model, {'y': y}, variational=variational, axis=0)
-    cost = lower_bound.sgvb()
-
-    optimizer = tf.train.AdamOptimizer(learning_rate=0.01)
-    infer_op = optimizer.minimize(cost)
+    model = zs.variational.ELBO(net, variational)
 
 Evaluation
 ----------
@@ -275,13 +331,17 @@ variational posterior as observations into the model, and averaging over the
 samples of ``y_mean`` from the resulting
 :class:`~zhusuan.framework.bn.BayesianNet`.
 The trick here is that the procedure of observing :math:`W` as samples from
-:math:`q(W)` has been implemented when constructing the evidence lower bound,
-and we can fetch the intermediate :class:`~zhusuan.framework.bn.BayesianNet`
-instance by ``lower_bound.bn``::
+:math:`q(W)` has been implemented when constructing the evidence lower bound. ::
 
     # prediction: rmse & log likelihood
-    y_mean = lower_bound.bn["y_mean"]
-    y_pred = tf.reduce_mean(y_mean, 0)
+    # In Net
+    y_mean = jt.squeeze(h, 2)
+
+    y = self.observed['y']
+    y_pred = jt.mean(y_mean, 0)
+    self.cache['rmse'] = jt.sqrt(jt.mean((y - y_pred) ** 2))
+    # During training
+    lower_bound = model({'x': x, 'y': y})
 
 The predictive mean is given by ``y_mean``.
 To see how this performs, we would like to compute some quantitative
@@ -311,7 +371,7 @@ This can also be computed by Monte Carlo estimation
 
 To be noted, as we usually standardized the data to make
 them have unit variance at beginning (check the full script
-`examples/bayesian_neural_nets/bnn_vi.py <https://github.com/thu-ml/zhusuan/blob/master/examples/bayesian_neural_nets/bnn_vi.py>`_),
+`examples/bayesian_neural_nets/bnn_vi.py <https://github.com/McGrady00H/Zhusuan-Jittor/blob/main/examples/bayesian_neural_nets/bnn_vi.py>`_),
 we need to count its effect in our evaluation formulas.
 RMSE is proportional to the amplitude, therefore the final RMSE should be
 multiplied with the standard deviation.
@@ -319,12 +379,8 @@ For log likelihood, it needs to be subtracted by a log term.
 All together, the code for evaluation is::
 
     # prediction: rmse & log likelihood
-    y_mean = lower_bound.bn["y_mean"]
-    y_pred = tf.reduce_mean(y_mean, 0)
-    rmse = tf.sqrt(tf.reduce_mean((y_pred - y) ** 2)) * std_y_train
-    log_py_xw = lower_bound.bn.cond_log_prob("y")
-    log_likelihood = tf.reduce_mean(zs.log_mean_exp(log_py_xw, 0)) - tf.log(
-        std_y_train)
+    rese = net.cache['rmse']
+    log_ll = model({'x': x, 'y': y})
 
 Run gradient descent
 --------------------
@@ -332,30 +388,31 @@ Run gradient descent
 Again, everything is good before a run. Now add the following codes to
 run the training loop and see how your BNN performs::
 
-    # Run the inference
-    with tf.Session() as sess:
-        sess.run(tf.global_variables_initializer())
-        for epoch in range(1, epochs + 1):
-            perm = np.random.permutation(x_train.shape[0])
-            x_train = x_train[perm, :]
-            y_train = y_train[perm]
-            lbs = []
-            for t in range(iters):
-                x_batch = x_train[t * batch_size:(t + 1) * batch_size]
-                y_batch = y_train[t * batch_size:(t + 1) * batch_size]
-                _, lb = sess.run(
-                    [infer_op, lower_bound],
-                    feed_dict={n_particles: lb_samples,
-                               x: x_batch, y: y_batch})
-                lbs.append(lb)
-            print('Epoch {}: Lower bound = {}'.format(epoch, np.mean(lbs)))
+    for epoch in range(epoch_size):
+    perm = np.random.permutation(x_train.shape[0])
+    x_train = x_train[perm, :]
+    y_train = y_train[perm]
 
-            if epoch % test_freq == 0:
-                test_rmse, test_ll = sess.run(
-                    [rmse, log_likelihood],
-                    feed_dict={n_particles: ll_samples,
-                               x: x_test, y: y_test})
-                print('>> TEST')
-                print('>> Test rmse = {}, log_likelihood = {}'
-                      .format(test_rmse, test_ll))
+    for step in range(num_batches):
+        x = jt.array(x_train[step * batch_size:(step + 1) * batch_size])
+        y = jt.array(y_train[step * batch_size:(step + 1) * batch_size])
+        lbs = model({'x': x, 'y': y})
+        optimizer.step(lbs)
+
+        if (step + 1) % num_batches == 0:
+            rmse = net.cache['rmse'].numpy()
+            print("Epoch[{}/{}], Step [{}/{}], Lower bound: {:.4f}, RMSE: {:.4f}".format(epoch + 1, epoch_size,
+                                                                                        step + 1,
+                                                                                        num_batches,
+                                                                                        float(lbs.numpy()),
+                                                                                        float(rmse) * std_y_train))
+
+    # eval
+    if epoch % test_freq == 0:
+        x_t = jt.array(x_test)
+        y_t = jt.array(y_test)
+        lbs = model({'x': x_t, 'y': y_t})
+        rmse = net.cache['rmse'].numpy()
+        print('>> TEST')
+        print('>> Test Lower bound: {:.4f}, RMSE: {:.4f}'.format(float(lbs.numpy()), float(rmse) * std_y_train))
 
