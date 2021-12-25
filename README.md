@@ -1,4 +1,4 @@
-[![Documentation Status](https://readthedocs.org/projects/zhusuan-jittor/badge/?version=main)](https://zhusuan-jittor.readthedocs.io/en/main/?badge=main)
+[![Documentation Status](https://readthedocs.org/projects/zhusuan-jittor/badge/?version=latest)](https://zhusuan-jittor.readthedocs.io/en/latest/?badge=latest)
 
 # Zhusuan-Jittor
 
