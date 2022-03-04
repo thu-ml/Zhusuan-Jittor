@@ -78,7 +78,20 @@ setup(
     # your project is installed. For an analysis of "install_requires" vs pip's
     # requirements files see:
     # https://packaging.python.org/en/latest/requirements.html
-    install_requires=['numpy>=1.19.1',],
+    install_requires=[astunparse==1.6.3,
+                      certifi==2021.10.8,
+                      cycler==0.11.0,
+                      fonttools==4.29.1,
+                      jittor==1.3.1.41,
+                      kiwisolver==1.3.2,
+                      matplotlib==3.5.1,
+                      numpy==1.21.5,
+                      packaging==21.3,
+                      Pillow==9.0.1,
+                      pyparsing==3.0.7,
+                      python-dateutil==2.8.2,
+                      six==1.16.0,
+                      tqdm==4.63.0],
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). You can install these using the following syntax,
